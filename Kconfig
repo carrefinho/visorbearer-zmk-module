@@ -32,6 +32,15 @@ config VISORBEARER_LED_BAR_BREATH_STEP_SIZE
       Higher values = faster breathing, lower values = slower breathing.
       Optimized for 100Hz refresh rate (10ms intervals).
 
+config VISORBEARER_LED_BAR_SHOW_MODIFIERS
+    bool "Show modifier keys on connection bar"
+    default y
+    help
+      When enabled, the connection bar displays active modifier keys (Shift, Ctrl, Alt, GUI)
+      when they are pressed. When disabled, the connection bar only shows BT connection status.
+
+if VISORBEARER_LED_BAR_SHOW_MODIFIERS
+
 config VISORBEARER_LED_BAR_MODIFIER_FADE_STEP_SIZE
     int "Brightness change per modifier animation frame (0-100)"
     default 25
@@ -40,6 +49,16 @@ config VISORBEARER_LED_BAR_MODIFIER_FADE_STEP_SIZE
       Controls how fast modifier key LEDs fade in/out when pressed/released.
       Higher values = more responsive feedback, lower values = smoother transitions.
       Optimized for responsive modifier key visual feedback.
+
+config VISORBEARER_LED_BAR_MODIFIER_ORDER
+    string "Order of modifiers on the connection bar"
+    default "SCAG"
+    help
+      Controls which modifier is shown on each of the four segments of the connection
+      bar, from left to right. Use the characters S (shift), C (control), A (alt),
+      and G (GUI) exactly once. Invalid values fall back to the default of "SCAG".
+
+endif # VISORBEARER_LED_BAR_SHOW_MODIFIERS
 
 config VISORBEARER_LED_BAR_BREATH_MIN
     int "Minimum brightness for breathing effect (0-100)"

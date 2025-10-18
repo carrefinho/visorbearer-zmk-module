@@ -50,7 +50,7 @@ Visorbearer features two RGB LED bars with four segments each:
   - **Cyan (Breathing)**: Paired but not connected
   - **Yellow (Breathing)**: Open profile, advertising
 - **When idle**:
-  - **Dim White**: Active modifier keys (Shift/Ctrl/Alt/GUI)
+  - **Dim White**: Active modifier keys (order configurable, default: Shift/Ctrl/Alt/GUI)
 
 **Battery Bar (right):**
 - **White**: Normal battery
@@ -95,6 +95,10 @@ CONFIG_VISORBEARER_LED_BAR_STARTUP_DISPLAY_TIME_MS=6000
 # Battery thresholds (percentage)
 CONFIG_VISORBEARER_LED_BAR_BATTERY_CRITICAL_THRESHOLD=8
 CONFIG_VISORBEARER_LED_BAR_BATTERY_LOW_THRESHOLD=15
+
+# Modifier display
+CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS=y             # Enable/disable modifier display
+CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER="SCAG"        # Order: S=Shift, C=Ctrl, A=Alt, G=GUI
 ```
 
 See `Kconfig` for all available configuration options.
