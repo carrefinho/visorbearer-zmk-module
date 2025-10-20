@@ -10,6 +10,10 @@
             #binding-cells = <0>;
             indicate-connectivity;
         };
+        /omit-if-no-ref/ visorbearer_soft_off: visorbearer_soft_off {
+            compatible = "zmk,behavior-visorbearer-soft-off";
+            #binding-cells = <0>;
+        };
     };
 
     macros {

@@ -199,6 +199,9 @@ static const struct device *led_conn_dev;
 static const struct device *led_batt_dev;
 static const struct device *gpio0_dev;
 
+// Soft-off protection flag
+static atomic_t soft_off_in_progress = ATOMIC_INIT(0);
+
 static struct {
     uint8_t active_profile;
     bool connected;
@@ -503,6 +506,12 @@ static void update_bars(void) {
     }
 
     for (int i = 0; i < NUM_SEGMENTS; i++) {
+        // Check for soft-off in the middle of updates to avoid I2C contention
+        if (atomic_get(&soft_off_in_progress)) {
+            LOG_DBG("Soft-off detected mid-update, stopping LED updates");
+            return;
+        }
+
         segment_update(&conn_bar.segments[i]);
         segment_update(&batt_bar.segments[i]);
         segment_write_hardware(led_conn_dev, i, &conn_bar.segments[i]);
@@ -645,6 +654,12 @@ static void led_thread(void *arg1, void *arg2, void *arg3) {
     led_init();
 
     while (1) {
+        // Skip LED updates if soft-off is in progress
+        if (atomic_get(&soft_off_in_progress)) {
+            k_sleep(K_MSEC(100));
+            continue;
+        }
+
         update_bars();
 
         if (bars_animating()) {
@@ -734,4 +749,42 @@ void led_show_ble_status(void) {
 
 void led_show_battery_status(void) {
     show_battery_status();
+}
+
+void led_set_soft_off_mode(bool enabled) {
+    atomic_set(&soft_off_in_progress, enabled ? 1 : 0);
+}
+
+void led_show_soft_off_anim(void) {
+    for (uint32_t led_idx = 0; led_idx < NUM_SEGMENTS; led_idx++) {
+        segment_set(&conn_bar.segments[led_idx], COLOR_BACKGROUND, MAX_BRIGHTNESS,
+                   ANIM_NONE, 0);
+        segment_set(&batt_bar.segments[led_idx], COLOR_BACKGROUND, MAX_BRIGHTNESS,
+                   ANIM_NONE, 0);
+        segment_update(&conn_bar.segments[led_idx]);
+        segment_update(&batt_bar.segments[led_idx]);
+        segment_write_hardware(led_conn_dev, led_idx, &conn_bar.segments[led_idx]);
+        segment_write_hardware(led_batt_dev, led_idx, &batt_bar.segments[led_idx]);
+    }
+
+    k_sleep(K_MSEC(LED_INIT_PAUSE_TIME_MS));
+
+    for (int stage = 0; stage < NUM_SEGMENTS; stage++) {
+        int conn_idx = stage;                       // A0, A1, A2, A3
+        int batt_idx = NUM_SEGMENTS - 1 - stage;    // B3, B2, B1, B0
+
+        segment_set(&conn_bar.segments[conn_idx], COLOR_BACKGROUND, 0,
+                   ANIM_FADE, LED_INIT_FADE_STEP_SIZE);
+        segment_set(&batt_bar.segments[batt_idx], COLOR_BACKGROUND, 0,
+                   ANIM_FADE, LED_INIT_FADE_STEP_SIZE);
+
+        while (conn_bar.segments[conn_idx].animation != ANIM_NONE ||
+               batt_bar.segments[batt_idx].animation != ANIM_NONE) {
+            segment_update(&conn_bar.segments[conn_idx]);
+            segment_update(&batt_bar.segments[batt_idx]);
+            segment_write_hardware(led_conn_dev, conn_idx, &conn_bar.segments[conn_idx]);
+            segment_write_hardware(led_batt_dev, batt_idx, &batt_bar.segments[batt_idx]);
+            k_sleep(K_MSEC(10));
+        }
+    }
 }

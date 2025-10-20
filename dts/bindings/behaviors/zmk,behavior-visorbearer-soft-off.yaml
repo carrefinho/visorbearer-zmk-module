@@ -1,0 +1,16 @@
+# Copyright (c) 2024
+# SPDX-License-Identifier: MIT
+
+description: Visorbearer soft-off behavior with LED animation
+
+compatible: "zmk,behavior-visorbearer-soft-off"
+
+include: [base.yaml]
+
+properties:
+  hold-time-ms:
+    type: int
+    description: |
+      How long the soft-off key must be held before triggering soft-off.
+      If set to zero, soft-off will trigger on key release instead of requiring a hold.
+    default: 0
