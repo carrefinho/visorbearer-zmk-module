@@ -98,7 +98,7 @@ CONFIG_VISORBEARER_LED_BAR_BATTERY_LOW_THRESHOLD=15
 
 # Modifier display
 CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS=y             # Enable/disable modifier display
-CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER="SCAG"        # Order: S=Shift, C=Ctrl, A=Alt, G=GUI
+CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER="SCAG"        # Customize modifier order: S=Shift, C=Ctrl, A=Alt, G=GUI
 ```
 
 See `Kconfig` for all available configuration options.

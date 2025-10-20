@@ -5,7 +5,7 @@ config VISORBEARER_LED_BAR
 
 if VISORBEARER_LED_BAR
 
-# Animation parameters (optimized for 100Hz refresh rate)
+# Animation parameters (based on 100Hz refresh rate)
 config VISORBEARER_LED_BAR_FADE_STEP_SIZE
     int "Brightness change per animation frame (0-100)"
     default 8
@@ -13,7 +13,6 @@ config VISORBEARER_LED_BAR_FADE_STEP_SIZE
     help
       Controls how fast LEDs fade between brightness levels.
       Higher values = faster transitions, lower values = smoother fades.
-      Optimized for 100Hz refresh rate (10ms intervals).
 
 config VISORBEARER_LED_BAR_INIT_FADE_STEP_SIZE
     int "Brightness change per init fade frame (0-100)"
@@ -21,7 +20,6 @@ config VISORBEARER_LED_BAR_INIT_FADE_STEP_SIZE
     range 1 50
     help
       Controls how fast LEDs fade during the initialization sequence.
-      Optimized for 100Hz refresh rate (10ms intervals).
 
 config VISORBEARER_LED_BAR_BREATH_STEP_SIZE
     int "Brightness change per breath frame (0-100)"
@@ -30,7 +28,6 @@ config VISORBEARER_LED_BAR_BREATH_STEP_SIZE
     help
       Controls the speed of the breathing animation.
       Higher values = faster breathing, lower values = slower breathing.
-      Optimized for 100Hz refresh rate (10ms intervals).
 
 config VISORBEARER_LED_BAR_SHOW_MODIFIERS
     bool "Show modifier keys on connection bar"
@@ -47,8 +44,6 @@ config VISORBEARER_LED_BAR_MODIFIER_FADE_STEP_SIZE
     range 1 50
     help
       Controls how fast modifier key LEDs fade in/out when pressed/released.
-      Higher values = more responsive feedback, lower values = smoother transitions.
-      Optimized for responsive modifier key visual feedback.
 
 config VISORBEARER_LED_BAR_MODIFIER_ORDER
     string "Order of modifiers on the connection bar"
@@ -108,7 +103,6 @@ config VISORBEARER_LED_BAR_BATTERY_LOW_THRESHOLD
     range 10 30
     help
       Between CRITICAL and LOW thresholds, first segment shows yellow.
-
 
 config VISORBEARER_LED_BAR_BATTERY_GRANULAR
     bool "Enable granular battery percentage display"
