@@ -1,33 +1,33 @@
 / {
     behaviors {
-        /omit-if-no-ref/ ind_bat: ind_bat {
-            compatible = "zmk,behavior-visorbearer-led-bars";
+        /omit-if-no-ref/ vb_ind_bat: visorbearer_ind_bat {
+            compatible = "zmk,behavior-visorbearer-led";
             #binding-cells = <0>;
             indicate-battery;
         };
-        /omit-if-no-ref/ ind_con: ind_con {
-            compatible = "zmk,behavior-visorbearer-led-bars";
+        /omit-if-no-ref/ vb_ind_con: visorbearer_ind_con {
+            compatible = "zmk,behavior-visorbearer-led";
             #binding-cells = <0>;
             indicate-connectivity;
         };
-        /omit-if-no-ref/ visorbearer_soft_off: visorbearer_soft_off {
+        /omit-if-no-ref/ vb_soft_off: visorbearer_soft_off {
             compatible = "zmk,behavior-visorbearer-soft-off";
             #binding-cells = <0>;
         };
     };
 
     macros {
-        /omit-if-no-ref/ bt_sel_led: bt_sel_with_indicator {
+        /omit-if-no-ref/ vb_bt_sel: visorbearer_bt_sel_led {
             compatible = "zmk,behavior-macro-one-param";
             #binding-cells = <1>;
             bindings = <&macro_param_1to2>,
                        <&bt BT_SEL MACRO_PLACEHOLDER>,
-                       <&ind_con>;
+                       <&vb_ind_con>;
         };
-        /omit-if-no-ref/ bt_clr_led: bt_clr_with_indicator {
+        /omit-if-no-ref/ vb_bt_clr: visorbearer_bt_clr_led {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&bt BT_CLR>, <&ind_con>;
+            bindings = <&bt BT_CLR>, <&vb_ind_con>;
         };
     };
 };

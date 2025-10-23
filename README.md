@@ -2,6 +2,24 @@
 
 This is the ZMK module for the [Visorbearer](https://github.com/carrefinho/visorbearer) keyboard, a 32-key unibody split wireless keyboard featuring 8 RGB LED indicators.
 
+> [!IMPORTANT]
+>
+> Recent updates have introduced breaking changes to naming conventions. If you're upgrading from an earlier version, you'll need to update your configuration:
+>
+> **Behavior Devicetree File:**
+> - At the top of your keymap: `#include <behaviors/led_bars.dtsi>` → `#include <behaviors/visorbearer_led.dtsi>`
+>
+> **Behaviors and Macros:**
+> - **NEW**: `&vb_soft_off` (soft-off with LED animation)
+> - `&ind_bat` → `&vb_ind_bat` (show battery status)
+> - `&ind_con` → `&vb_ind_con` (show connection status)
+> - `&bt_sel_led` → `&vb_bt_sel` (BT select with indicator)
+> - `&bt_clr_led` → `&vb_bt_clr` (BT clear with indicator)
+>
+> **Configuration Options:**
+> - `_BAR_` has been removed from all config option names
+> - Example: `CONFIG_VISORBEARER_LED_BAR_FADE_STEP_SIZE` → `CONFIG_VISORBEARER_LED_FADE_STEP_SIZE`
+
 ## Usage
 
 Add these lines to `config/west.yml` in your `zmk-config` repository:
@@ -63,8 +81,8 @@ Visorbearer features two RGB LED bars with four segments each:
 Two behaviors are available to trigger LED indications on demand:
 
 ```dts
-&ind_bat    // Show battery status when pressed
-&ind_con    // Show connection status when pressed
+&vb_ind_bat    // Show battery status when pressed
+&vb_ind_con    // Show connection status when pressed
 ```
 
 ### Bluetooth Behavior Wrapper Macros
@@ -72,11 +90,19 @@ Two behaviors are available to trigger LED indications on demand:
 Use these macros to also trigger LED indications when selecting/clearing BT profiles:
 
 ```dts
-&bt_sel_led 0   // Select BT profile 0 and show connection status
-&bt_sel_led 1   // Select BT profile 1 and show connection status
-&bt_sel_led 2   // Select BT profile 2 and show connection status
-&bt_sel_led 3   // Select BT profile 3 and show connection status
-&bt_clr_led     // Clear current BT profile and show connection status
+&vb_bt_sel 0   // Select BT profile 0 and show connection status
+&vb_bt_sel 1   // Select BT profile 1 and show connection status
+&vb_bt_sel 2   // Select BT profile 2 and show connection status
+&vb_bt_sel 3   // Select BT profile 3 and show connection status
+&vb_bt_clr     // Clear current BT profile and show connection status
+```
+
+### Soft-Off Behavior
+
+A custom soft-off behavior with LED animation:
+
+```dts
+&vb_soft_off   // Enter soft-off mode with LED sweep animation
 ```
 
 ## Configuration
@@ -85,20 +111,20 @@ Customize LED behavior by adding options to your `config/visorbearer.conf` file:
 
 ```ini
 # Animation speeds (higher = faster)
-CONFIG_VISORBEARER_LED_BAR_FADE_STEP_SIZE=8
-CONFIG_VISORBEARER_LED_BAR_BREATH_STEP_SIZE=3
+CONFIG_VISORBEARER_LED_FADE_STEP_SIZE=8
+CONFIG_VISORBEARER_LED_BREATH_STEP_SIZE=3
 
 # Display timing (milliseconds)
-CONFIG_VISORBEARER_LED_BAR_EVENT_DISPLAY_TIME_MS=3000
-CONFIG_VISORBEARER_LED_BAR_STARTUP_DISPLAY_TIME_MS=6000
+CONFIG_VISORBEARER_LED_EVENT_DISPLAY_TIME_MS=3000
+CONFIG_VISORBEARER_LED_STARTUP_DISPLAY_TIME_MS=6000
 
 # Battery thresholds (percentage)
-CONFIG_VISORBEARER_LED_BAR_BATTERY_CRITICAL_THRESHOLD=8
-CONFIG_VISORBEARER_LED_BAR_BATTERY_LOW_THRESHOLD=15
+CONFIG_VISORBEARER_LED_BATTERY_CRITICAL_THRESHOLD=8
+CONFIG_VISORBEARER_LED_BATTERY_LOW_THRESHOLD=15
 
 # Modifier display
-CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS=y             # Enable/disable modifier display
-CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER="SCAG"        # Customize modifier order: S=Shift, C=Ctrl, A=Alt, G=GUI
+CONFIG_VISORBEARER_LED_SHOW_MODIFIERS=y                 # Enable/disable modifier display
+CONFIG_VISORBEARER_LED_MODIFIER_ORDER="SCAG"            # Customize modifier order: S=Shift, C=Ctrl, A=Alt, G=GUI
 ```
 
 See `Kconfig` for all available configuration options.

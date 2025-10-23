@@ -3,7 +3,7 @@ if SHIELD_VISORBEARER
 config ZMK_KEYBOARD_NAME
    default "Visorbearer"
 
-config VISORBEARER_LED_BAR
+config VISORBEARER_LED
    default y
 
 endif

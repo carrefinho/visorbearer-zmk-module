@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2024
- *
- * SPDX-License-Identifier: MIT
- */
-
 #define DT_DRV_COMPAT zmk_behavior_visorbearer_soft_off
 
 #include <zephyr/device.h>
@@ -13,7 +7,7 @@
 #include <zmk/pm.h>
 #include <zmk/behavior.h>
 
-#include "visorbearer-zmk-module/led_show.h"
+#include "visorbearer-zmk-module/visorbearer_led.h"
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -45,11 +39,11 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
         LOG_DBG("No hold time set, triggering visorbearer soft off");
 
         LOG_INF("Visorbearer soft-off: stopping LED thread");
-        led_set_soft_off_mode(true);
+        visorbearer_led_set_soft_off_mode(true);
         k_sleep(K_MSEC(50));
 
         LOG_INF("Visorbearer soft-off: running LED animation");
-        led_show_soft_off_anim();
+        visorbearer_led_show_soft_off_anim();
 
         zmk_pm_soft_off();
     } else {
@@ -57,11 +51,11 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
 
         if (hold_time > config->hold_time_ms) {
             LOG_INF("Visorbearer soft-off: stopping LED thread");
-            led_set_soft_off_mode(true);
+            visorbearer_led_set_soft_off_mode(true);
             k_sleep(K_MSEC(50));
 
             LOG_INF("Visorbearer soft-off: running LED animation");
-            led_show_soft_off_anim();
+            visorbearer_led_show_soft_off_anim();
 
             zmk_pm_soft_off();
         } else {

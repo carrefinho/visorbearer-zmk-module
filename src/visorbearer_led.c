@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 #include <ctype.h>
 #endif
 #include <zephyr/device.h>
@@ -24,36 +24,33 @@
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
 
-#include "visorbearer-zmk-module/led_show.h"
+#include "visorbearer-zmk-module/visorbearer_led.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(led_bar, 4);
+LOG_MODULE_REGISTER(visorbearer_led, 4);
 
 #define LPA_NODE DT_NODELABEL(lp5012a)
 #define LPB_NODE DT_NODELABEL(lp5012b)
 #define NUM_SEGMENTS 4
 #define MAX_BRIGHTNESS 100
 
-#define LED_FADE_STEP_SIZE CONFIG_VISORBEARER_LED_BAR_FADE_STEP_SIZE
-#define LED_INIT_FADE_STEP_SIZE CONFIG_VISORBEARER_LED_BAR_INIT_FADE_STEP_SIZE
-#define LED_BREATH_STEP_SIZE CONFIG_VISORBEARER_LED_BAR_BREATH_STEP_SIZE
-#define LED_BREATH_MIN CONFIG_VISORBEARER_LED_BAR_BREATH_MIN
-#define LED_BREATH_MAX CONFIG_VISORBEARER_LED_BAR_BREATH_MAX
+#define LED_FADE_STEP_SIZE CONFIG_VISORBEARER_LED_FADE_STEP_SIZE
+#define LED_INIT_FADE_STEP_SIZE CONFIG_VISORBEARER_LED_INIT_FADE_STEP_SIZE
+#define LED_BREATH_STEP_SIZE CONFIG_VISORBEARER_LED_BREATH_STEP_SIZE
+#define LED_BREATH_MIN CONFIG_VISORBEARER_LED_BREATH_MIN
+#define LED_BREATH_MAX CONFIG_VISORBEARER_LED_BREATH_MAX
+#define MODIFIER_FADE_STEP_SIZE CONFIG_VISORBEARER_LED_MODIFIER_FADE_STEP_SIZE
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
-#define MODIFIER_FADE_STEP_SIZE CONFIG_VISORBEARER_LED_BAR_MODIFIER_FADE_STEP_SIZE
-#endif
+#define LED_STARTUP_DISPLAY_TIME_MS CONFIG_VISORBEARER_LED_STARTUP_DISPLAY_TIME_MS
+#define LED_EVENT_DISPLAY_TIME_MS CONFIG_VISORBEARER_LED_EVENT_DISPLAY_TIME_MS
+#define LED_INIT_PAUSE_TIME_MS CONFIG_VISORBEARER_LED_INIT_PAUSE_TIME_MS
 
-#define LED_STARTUP_DISPLAY_TIME_MS CONFIG_VISORBEARER_LED_BAR_STARTUP_DISPLAY_TIME_MS
-#define LED_EVENT_DISPLAY_TIME_MS CONFIG_VISORBEARER_LED_BAR_EVENT_DISPLAY_TIME_MS
-#define LED_INIT_PAUSE_TIME_MS CONFIG_VISORBEARER_LED_BAR_INIT_PAUSE_TIME_MS
-
-#define BATTERY_CRITICAL_THRESHOLD CONFIG_VISORBEARER_LED_BAR_BATTERY_CRITICAL_THRESHOLD
-#define BATTERY_LOW_THRESHOLD CONFIG_VISORBEARER_LED_BAR_BATTERY_LOW_THRESHOLD
+#define BATTERY_CRITICAL_THRESHOLD CONFIG_VISORBEARER_LED_BATTERY_CRITICAL_THRESHOLD
+#define BATTERY_LOW_THRESHOLD CONFIG_VISORBEARER_LED_BATTERY_LOW_THRESHOLD
 #define BATTERY_PER_SEGMENT 25
 #define CHARGING_CHECK_THROTTLE_MS 1000
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 enum modifier_type {
     MOD_SEGMENT_SHIFT,
     MOD_SEGMENT_CTRL,
@@ -74,8 +71,9 @@ enum color_index {
     COLOR_BATTERY_YELLOW,
     COLOR_BATTERY_RED,
     COLOR_CHARGING_GREEN,
-    COLOR_MODIFIER_ACTIVE
-#ifdef CONFIG_VISORBEARER_LED_BAR_BATTERY_GRANULAR
+    COLOR_MODIFIER_ACTIVE,
+    COLOR_SOFTOFF_WHITE
+#ifdef CONFIG_VISORBEARER_LED_BATTERY_GRANULAR
     ,
     COLOR_BATTERY_WHITE_MID,
     COLOR_BATTERY_YELLOW_MID
@@ -93,24 +91,25 @@ static const uint8_t colors[][3] = {
     [COLOR_BATTERY_YELLOW] = {0xB3, 0xB3, 0x00},
     [COLOR_BATTERY_RED] = {0xB3, 0x00, 0x00},
     [COLOR_CHARGING_GREEN] = {0x00, 0xB3, 0x00},
-    [COLOR_MODIFIER_ACTIVE] = {0x1A, 0x1A, 0x1A}
-#ifdef CONFIG_VISORBEARER_LED_BAR_BATTERY_GRANULAR
+    [COLOR_MODIFIER_ACTIVE] = {0x1A, 0x1A, 0x1A},
+    [COLOR_SOFTOFF_WHITE] = {0x2A, 0x2A, 0x2A}
+#ifdef CONFIG_VISORBEARER_LED_BATTERY_GRANULAR
     ,
     [COLOR_BATTERY_WHITE_MID] = {0x4D, 0x4D, 0x4D},
     [COLOR_BATTERY_YELLOW_MID] = {0x4D, 0x4D, 0x00}
 #endif
 };
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 
 #define MODIFIER_ORDER_DEFAULT "SCAG"
 
-#ifndef CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER
-#define CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER MODIFIER_ORDER_DEFAULT
+#ifndef CONFIG_VISORBEARER_LED_MODIFIER_ORDER
+#define CONFIG_VISORBEARER_LED_MODIFIER_ORDER MODIFIER_ORDER_DEFAULT
 #endif
 
 // Validate Kconfig string length
-BUILD_ASSERT(sizeof(CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER) - 1 == NUM_SEGMENTS,
+BUILD_ASSERT(sizeof(CONFIG_VISORBEARER_LED_MODIFIER_ORDER) - 1 == NUM_SEGMENTS,
              "Modifier order configuration must be exactly 4 characters");
 
 static const enum modifier_type modifier_order_fallback[NUM_SEGMENTS] = {
@@ -152,16 +151,16 @@ static bool parse_modifier_order(const char *order_str, enum modifier_type out_o
 }
 
 static void initialize_modifier_order(void) {
-    if (!parse_modifier_order(CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER, modifier_order)) {
-        if (strcmp(CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER, MODIFIER_ORDER_DEFAULT) != 0) {
+    if (!parse_modifier_order(CONFIG_VISORBEARER_LED_MODIFIER_ORDER, modifier_order)) {
+        if (strcmp(CONFIG_VISORBEARER_LED_MODIFIER_ORDER, MODIFIER_ORDER_DEFAULT) != 0) {
             LOG_WRN("Invalid modifier order \"%s\"; falling back to default \"%s\"",
-                    CONFIG_VISORBEARER_LED_BAR_MODIFIER_ORDER, MODIFIER_ORDER_DEFAULT);
+                    CONFIG_VISORBEARER_LED_MODIFIER_ORDER, MODIFIER_ORDER_DEFAULT);
         }
         memcpy(modifier_order, modifier_order_fallback, sizeof(modifier_order));
     }
 }
 
-#endif // CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#endif // CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 
 enum animation_type {
     ANIM_NONE,
@@ -182,7 +181,7 @@ struct led_segment {
 struct led_bar {
     struct led_segment segments[NUM_SEGMENTS];
     int64_t expire_time;
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     bool showing_modifiers;   // Only used for conn_bar
 #endif
 };
@@ -210,7 +209,7 @@ static struct {
     bool charging;
     bool actively_charging;
     int64_t last_charging_check;
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     bool modifiers[MOD_SEGMENT_COUNT];
 #endif
 } system_state;
@@ -295,7 +294,7 @@ static void segment_write_hardware(const struct device *dev, int index, struct l
     seg->dirty = false;
 }
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 static bool any_modifier_active(void) {
     for (int i = 0; i < MOD_SEGMENT_COUNT; i++) {
         if (system_state.modifiers[i]) return true;
@@ -361,7 +360,7 @@ static struct battery_segment_config get_battery_segment_config(int segment,
             config.color = COLOR_BATTERY_RED;
             config.animation = ANIM_BREATH;
         } else {
-#ifdef CONFIG_VISORBEARER_LED_BAR_BATTERY_GRANULAR
+#ifdef CONFIG_VISORBEARER_LED_BATTERY_GRANULAR
             uint8_t segment_start = filled_segments * BATTERY_PER_SEGMENT;
             uint8_t pct_in_segment = battery_pct - segment_start;
 
@@ -404,7 +403,7 @@ static void display_connection_status(void) {
     }
 }
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 static void display_modifiers(void) {
     for (int i = 0; i < NUM_SEGMENTS; i++) {
         enum modifier_type modifier = modifier_order[i];
@@ -471,7 +470,7 @@ static void update_bars(void) {
 
     if (conn_bar.expire_time > 0 && current_time >= conn_bar.expire_time) {
         conn_bar.expire_time = 0;
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
         if (!conn_bar.showing_modifiers) {
             fade_out_bar(&conn_bar);
         }
@@ -480,7 +479,7 @@ static void update_bars(void) {
 #endif
     }
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     if (conn_bar.expire_time > 0 && !conn_bar.showing_modifiers) {
         display_connection_status();
     } else if (any_modifier_active()) {
@@ -524,7 +523,7 @@ static void show_connection_status(void) {
     if (conn_bar.expire_time < new_expire) {
         conn_bar.expire_time = new_expire;
     }
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     conn_bar.showing_modifiers = false;
 #endif
     k_sem_give(&led_update_sem);
@@ -538,7 +537,7 @@ static void show_battery_status(void) {
     k_sem_give(&led_update_sem);
 }
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 static void update_modifier_state(uint8_t keycode, bool pressed) {
     enum modifier_type modifier = MOD_SEGMENT_COUNT;
 
@@ -590,7 +589,7 @@ static int led_init(void) {
         batt_bar.segments[i].dirty = true;
     }
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     initialize_modifier_order();
 #endif
 
@@ -601,7 +600,7 @@ static int led_init(void) {
     system_state.actively_charging = is_actively_charging();
     system_state.last_charging_check = k_uptime_get();
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     zmk_mod_flags_t mods = zmk_hid_get_explicit_mods();
     system_state.modifiers[MOD_SEGMENT_SHIFT] = (mods & (MOD_LSFT | MOD_RSFT)) != 0;
     system_state.modifiers[MOD_SEGMENT_CTRL] = (mods & (MOD_LCTL | MOD_RCTL)) != 0;
@@ -727,7 +726,7 @@ static int battery_state_changed_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(led_battery, battery_state_changed_listener);
 ZMK_SUBSCRIPTION(led_battery, zmk_battery_state_changed);
 
-#ifdef CONFIG_VISORBEARER_LED_BAR_SHOW_MODIFIERS
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 static int keycode_state_changed_listener(const zmk_event_t *eh) {
     const struct zmk_keycode_state_changed *event = as_zmk_keycode_state_changed(eh);
     if (event && is_mod(event->usage_page, event->keycode)) {
@@ -743,23 +742,23 @@ ZMK_SUBSCRIPTION(led_keycode, zmk_keycode_state_changed);
 K_THREAD_DEFINE(led_thread_id, 1024, led_thread, NULL, NULL, NULL,
                 K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
 
-void led_show_ble_status(void) {
+void visorbearer_led_show_ble_status(void) {
     show_connection_status();
 }
 
-void led_show_battery_status(void) {
+void visorbearer_led_show_battery_status(void) {
     show_battery_status();
 }
 
-void led_set_soft_off_mode(bool enabled) {
+void visorbearer_led_set_soft_off_mode(bool enabled) {
     atomic_set(&soft_off_in_progress, enabled ? 1 : 0);
 }
 
-void led_show_soft_off_anim(void) {
+void visorbearer_led_show_soft_off_anim(void) {
     for (uint32_t led_idx = 0; led_idx < NUM_SEGMENTS; led_idx++) {
-        segment_set(&conn_bar.segments[led_idx], COLOR_BACKGROUND, MAX_BRIGHTNESS,
+        segment_set(&conn_bar.segments[led_idx], COLOR_SOFTOFF_WHITE, MAX_BRIGHTNESS,
                    ANIM_NONE, 0);
-        segment_set(&batt_bar.segments[led_idx], COLOR_BACKGROUND, MAX_BRIGHTNESS,
+        segment_set(&batt_bar.segments[led_idx], COLOR_SOFTOFF_WHITE, MAX_BRIGHTNESS,
                    ANIM_NONE, 0);
         segment_update(&conn_bar.segments[led_idx]);
         segment_update(&batt_bar.segments[led_idx]);
@@ -767,16 +766,16 @@ void led_show_soft_off_anim(void) {
         segment_write_hardware(led_batt_dev, led_idx, &batt_bar.segments[led_idx]);
     }
 
-    k_sleep(K_MSEC(LED_INIT_PAUSE_TIME_MS));
+    k_msleep(300);
 
     for (int stage = 0; stage < NUM_SEGMENTS; stage++) {
         int conn_idx = stage;                       // A0, A1, A2, A3
         int batt_idx = NUM_SEGMENTS - 1 - stage;    // B3, B2, B1, B0
 
-        segment_set(&conn_bar.segments[conn_idx], COLOR_BACKGROUND, 0,
-                   ANIM_FADE, LED_INIT_FADE_STEP_SIZE);
-        segment_set(&batt_bar.segments[batt_idx], COLOR_BACKGROUND, 0,
-                   ANIM_FADE, LED_INIT_FADE_STEP_SIZE);
+        segment_set(&conn_bar.segments[conn_idx], COLOR_SOFTOFF_WHITE, 0,
+                   ANIM_FADE, 10);
+        segment_set(&batt_bar.segments[batt_idx], COLOR_SOFTOFF_WHITE, 0,
+                   ANIM_FADE, 10);
 
         while (conn_bar.segments[conn_idx].animation != ANIM_NONE ||
                batt_bar.segments[batt_idx].animation != ANIM_NONE) {

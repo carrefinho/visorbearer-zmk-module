@@ -1,6 +1,6 @@
-description: Visorbearer LED bars indicator behavior
+description: Visorbearer LED indicator behavior
 
-compatible: "zmk,behavior-visorbearer-led-bars"
+compatible: "zmk,behavior-visorbearer-led"
 
 include: zero_param.yaml
 

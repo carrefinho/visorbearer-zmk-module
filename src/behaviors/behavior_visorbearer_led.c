@@ -1,33 +1,33 @@
-#define DT_DRV_COMPAT zmk_behavior_visorbearer_led_bars
+#define DT_DRV_COMPAT zmk_behavior_visorbearer_led
 
 #include <zephyr/device.h>
 #include <drivers/behavior.h>
 #include <zephyr/logging/log.h>
 
 #include <zmk/behavior.h>
-#include "visorbearer-zmk-module/led_show.h"
+#include "visorbearer-zmk-module/visorbearer_led.h"
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-struct behavior_visorbearer_led_bars_config {
+struct behavior_visorbearer_led_config {
     bool indicate_battery;
     bool indicate_connectivity;
 };
 
-static int behavior_visorbearer_led_bars_init(const struct device *dev) {
+static int behavior_visorbearer_led_init(const struct device *dev) {
     return 0;
 }
 
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
     const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
-    const struct behavior_visorbearer_led_bars_config *cfg = dev->config;
+    const struct behavior_visorbearer_led_config *cfg = dev->config;
 
     if (cfg->indicate_battery) {
-        led_show_battery_status();
+        visorbearer_led_show_battery_status();
     }
     if (cfg->indicate_connectivity) {
-        led_show_ble_status();
+        visorbearer_led_show_ble_status();
     }
 
     return ZMK_BEHAVIOR_OPAQUE;
@@ -38,7 +38,7 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
-static const struct behavior_driver_api behavior_visorbearer_led_bars_driver_api = {
+static const struct behavior_driver_api behavior_visorbearer_led_driver_api = {
     .binding_pressed = on_keymap_binding_pressed,
     .binding_released = on_keymap_binding_released,
     .locality = BEHAVIOR_LOCALITY_GLOBAL,
@@ -48,12 +48,12 @@ static const struct behavior_driver_api behavior_visorbearer_led_bars_driver_api
 };
 
 #define LEDVISORBEARER_INST(n)                                                                               \
-    static struct behavior_visorbearer_led_bars_config behavior_visorbearer_led_bars_config_##n = {              \
+    static struct behavior_visorbearer_led_config behavior_visorbearer_led_config_##n = {              \
         .indicate_battery = DT_INST_PROP(n, indicate_battery),                                       \
         .indicate_connectivity = DT_INST_PROP(n, indicate_connectivity),                             \
     };                                                                                               \
-    BEHAVIOR_DT_INST_DEFINE(n, behavior_visorbearer_led_bars_init, NULL, NULL, &behavior_visorbearer_led_bars_config_##n, \
+    BEHAVIOR_DT_INST_DEFINE(n, behavior_visorbearer_led_init, NULL, NULL, &behavior_visorbearer_led_config_##n, \
                             POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,                        \
-                            &behavior_visorbearer_led_bars_driver_api);
+                            &behavior_visorbearer_led_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(LEDVISORBEARER_INST)
