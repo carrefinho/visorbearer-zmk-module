@@ -22,24 +22,27 @@ This is the ZMK module for the [Visorbearer](https://github.com/carrefinho/visor
 
 ## Usage
 
+> [!IMPORTANT]
+> The following are specific to testing with ZMK on Zephyr 4.1. Note the change in ZMK remote and revision, and board name from `seeeduino_xiao_ble` to `xiao_ble`.
+
 Add these lines to `config/west.yml` in your `zmk-config` repository:
 
 ```yaml
 manifest:
   remotes:
-    - name: zmkfirmware
-      url-base: https://github.com/zmkfirmware
+    - name: petejohanson
+      url-base: https://github.com/petejohanson
     - name: carrefinho                            # <---
       url-base: https://github.com/carrefinho     # <---
   projects:
     - name: zmk
-      remote: zmkfirmware
-      revision: main
+      remote: petejohanson
+      revision: core/move-to-zephyr-4-1
       import: app/west.yml
     - name: zmk-keyboards-visorbearer             # <---
       repo-path: visorbearer-zmk-module           # <---
       remote: carrefinho                          # <---
-      revision: main                              # <---
+      revision: zmk-zephyr-4-1                    # <---
   self:
     path: config
 ```
@@ -49,10 +52,10 @@ Then add the `visorbearer` shield to your `build.yaml`:
 ```yaml
 ---
 include:
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble
     shield: visorbearer
     snippet: studio-rpc-usb-uart
-  - board: seeeduino_xiao_ble
+  - board: xiao_ble
     shield: settings_reset
 ```
 
