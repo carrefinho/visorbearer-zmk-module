@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
 #include <ctype.h>
 #endif
@@ -10,6 +11,8 @@
 #include <zephyr/drivers/led/lp50xx.h>
 #include <zephyr/dt-bindings/led/led.h>
 #include <zephyr/kernel.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/sys/util.h>
 
 #include <zmk/ble.h>
 #include <zmk/events/ble_active_profile_changed.h>
@@ -44,6 +47,9 @@ LOG_MODULE_REGISTER(visorbearer_led, 4);
 #define LED_STARTUP_DISPLAY_TIME_MS CONFIG_VISORBEARER_LED_STARTUP_DISPLAY_TIME_MS
 #define LED_EVENT_DISPLAY_TIME_MS CONFIG_VISORBEARER_LED_EVENT_DISPLAY_TIME_MS
 #define LED_INIT_PAUSE_TIME_MS CONFIG_VISORBEARER_LED_INIT_PAUSE_TIME_MS
+#define LED_SOFT_OFF_ACK_TIMEOUT_MS 250
+#define LED_PM_SUSPEND_RETRIES 5
+#define LED_PM_RETRY_DELAY_MS 20
 
 #define BATTERY_CRITICAL_THRESHOLD CONFIG_VISORBEARER_LED_BATTERY_CRITICAL_THRESHOLD
 #define BATTERY_LOW_THRESHOLD CONFIG_VISORBEARER_LED_BATTERY_LOW_THRESHOLD
@@ -182,7 +188,7 @@ struct led_bar {
     struct led_segment segments[NUM_SEGMENTS];
     int64_t expire_time;
 #ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
-    bool showing_modifiers;   // Only used for conn_bar
+    bool showing_modifiers;
 #endif
 };
 
@@ -197,6 +203,12 @@ static struct led_bar batt_bar;
 static const struct device *led_conn_dev;
 static const struct device *led_batt_dev;
 static const struct device *gpio0_dev;
+#if IS_ENABLED(CONFIG_PM_DEVICE)
+static const struct device *const led_devices[] = {
+    DEVICE_DT_GET(LPA_NODE),
+    DEVICE_DT_GET(LPB_NODE)
+};
+#endif
 
 // Soft-off protection flag
 static atomic_t soft_off_in_progress = ATOMIC_INIT(0);
@@ -214,11 +226,48 @@ static struct {
 #endif
 } system_state;
 
-K_SEM_DEFINE(led_update_sem, 0, 1);
+K_SEM_DEFINE(led_wake_sem, 0, 1);
+K_SEM_DEFINE(soft_off_ack_sem, 0, 1);
+
+static void sem_clear(struct k_sem *sem) {
+    while (k_sem_take(sem, K_NO_WAIT) == 0) {
+    }
+}
+
+static void signal_soft_off_ready(void) {
+    k_sem_give(&soft_off_ack_sem);
+}
+
+static void reset_soft_off_ack(void) {
+    sem_clear(&soft_off_ack_sem);
+}
+
+#if IS_ENABLED(CONFIG_PM_DEVICE)
+static int suspend_led_device(const struct device *dev) {
+    int ret = pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
+
+    if (ret == -EBUSY) {
+        k_msleep(50);
+        ret = pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
+    }
+
+    if (ret == 0 || ret == -ENOSYS || ret == -ENOTSUP || ret == -EALREADY) {
+        return 0;
+    }
+
+    return ret;
+}
+
+static void resume_led_device(const struct device *dev) {
+    int ret = pm_device_action_run(dev, PM_DEVICE_ACTION_RESUME);
+    if (ret < 0 && ret != -ENOSYS && ret != -ENOTSUP && ret != -EALREADY) {
+        LOG_WRN("Soft-off: resume of %s returned %d", dev->name, ret);
+    }
+}
+#endif
 
 static void segment_set(struct led_segment *seg, enum color_index color,
                        uint8_t target, enum animation_type anim, int8_t fade_step) {
-    // Only update if something actually changes
     if (memcmp(seg->color, colors[color], 3) == 0 &&
         seg->target_brightness == target &&
         seg->animation == anim) {
@@ -505,9 +554,8 @@ static void update_bars(void) {
     }
 
     for (int i = 0; i < NUM_SEGMENTS; i++) {
-        // Check for soft-off in the middle of updates to avoid I2C contention
         if (atomic_get(&soft_off_in_progress)) {
-            LOG_DBG("Soft-off detected mid-update, stopping LED updates");
+            signal_soft_off_ready();
             return;
         }
 
@@ -526,7 +574,7 @@ static void show_connection_status(void) {
 #ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
     conn_bar.showing_modifiers = false;
 #endif
-    k_sem_give(&led_update_sem);
+    k_sem_give(&led_wake_sem);
 }
 
 static void show_battery_status(void) {
@@ -534,7 +582,7 @@ static void show_battery_status(void) {
     if (batt_bar.expire_time < new_expire) {
         batt_bar.expire_time = new_expire;
     }
-    k_sem_give(&led_update_sem);
+    k_sem_give(&led_wake_sem);
 }
 
 #ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
@@ -562,7 +610,7 @@ static void update_modifier_state(uint8_t keycode, bool pressed) {
 
     if (modifier < MOD_SEGMENT_COUNT && system_state.modifiers[modifier] != pressed) {
         system_state.modifiers[modifier] = pressed;
-        k_sem_give(&led_update_sem);
+        k_sem_give(&led_wake_sem);
     }
 }
 #endif
@@ -608,13 +656,11 @@ static int led_init(void) {
     system_state.modifiers[MOD_SEGMENT_GUI] = (mods & (MOD_LGUI | MOD_RGUI)) != 0;
 #endif
 
-    // wait for valid battery reading
     for (int retry = 0; retry < 10 && system_state.battery_percentage == 0; retry++) {
         k_sleep(K_MSEC(10));
         system_state.battery_percentage = zmk_battery_state_of_charge();
     }
 
-    // startup animation
     for (int stage = 0; stage < NUM_SEGMENTS; stage++) {
         int conn_idx = NUM_SEGMENTS - 1 - stage;
         int batt_idx = stage;
@@ -632,8 +678,6 @@ static int led_init(void) {
             segment_write_hardware(led_batt_dev, batt_idx, &batt_bar.segments[batt_idx]);
             k_sleep(K_MSEC(10));
         }
-
-        LOG_DBG("Init fade stage %d complete", stage + 1);
     }
 
     k_sleep(K_MSEC(LED_INIT_PAUSE_TIME_MS));
@@ -653,8 +697,8 @@ static void led_thread(void *arg1, void *arg2, void *arg3) {
     led_init();
 
     while (1) {
-        // Skip LED updates if soft-off is in progress
         if (atomic_get(&soft_off_in_progress)) {
+            signal_soft_off_ready();
             k_sleep(K_MSEC(100));
             continue;
         }
@@ -664,7 +708,7 @@ static void led_thread(void *arg1, void *arg2, void *arg3) {
         if (bars_animating()) {
             k_sleep(K_MSEC(10));
         } else {
-            k_sem_take(&led_update_sem, K_MSEC(100));
+            k_sem_take(&led_wake_sem, K_MSEC(100));
         }
     }
 }
@@ -715,7 +759,6 @@ static int battery_state_changed_listener(const zmk_event_t *eh) {
     const struct zmk_battery_state_changed *event = as_zmk_battery_state_changed(eh);
     if (event) {
         system_state.battery_percentage = event->state_of_charge;
-        // Show battery bar if critical
         if (system_state.battery_percentage < BATTERY_CRITICAL_THRESHOLD) {
             show_battery_status();
         }
@@ -751,7 +794,56 @@ void visorbearer_led_show_battery_status(void) {
 }
 
 void visorbearer_led_set_soft_off_mode(bool enabled) {
-    atomic_set(&soft_off_in_progress, enabled ? 1 : 0);
+    if (enabled) {
+        reset_soft_off_ack();
+        atomic_set(&soft_off_in_progress, 1);
+        k_sem_give(&led_wake_sem);
+
+        int ret = k_sem_take(&soft_off_ack_sem, K_MSEC(LED_SOFT_OFF_ACK_TIMEOUT_MS));
+        if (ret != 0) {
+            LOG_DBG("Soft-off: LED thread did not idle within %d ms", LED_SOFT_OFF_ACK_TIMEOUT_MS);
+        }
+    } else {
+        atomic_set(&soft_off_in_progress, 0);
+        reset_soft_off_ack();
+        k_sem_give(&led_wake_sem);
+    }
+}
+
+int visorbearer_led_suspend_controllers(void) {
+#if !IS_ENABLED(CONFIG_PM_DEVICE)
+    return 0;
+#else
+    for (size_t i = 0; i < ARRAY_SIZE(led_devices); i++) {
+        const struct device *dev = led_devices[i];
+
+        if (!device_is_ready(dev)) {
+            LOG_WRN("Soft-off: device %s not ready for suspend", dev->name);
+            continue;
+        }
+
+        int ret = suspend_led_device(dev);
+        if (ret < 0) {
+            LOG_ERR("Soft-off: suspend of %s failed (%d)", dev->name, ret);
+            visorbearer_led_resume_controllers();
+            return ret;
+        }
+    }
+
+    return 0;
+#endif
+}
+
+void visorbearer_led_resume_controllers(void) {
+#if IS_ENABLED(CONFIG_PM_DEVICE)
+    for (int i = ARRAY_SIZE(led_devices) - 1; i >= 0; i--) {
+        const struct device *dev = led_devices[i];
+
+        if (device_is_ready(dev)) {
+            resume_led_device(dev);
+        }
+    }
+#endif
 }
 
 void visorbearer_led_show_soft_off_anim(void) {

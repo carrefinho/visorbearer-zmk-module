@@ -11,6 +11,8 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
+static atomic_t soft_off_running = ATOMIC_INIT(0);
+
 struct behavior_visorbearer_soft_off_config {
     uint32_t hold_time_ms;
 };
@@ -18,6 +20,40 @@ struct behavior_visorbearer_soft_off_config {
 struct behavior_visorbearer_soft_off_data {
     uint32_t press_start;
 };
+
+static void visorbearer_reset_soft_off_state(void) {
+    visorbearer_led_resume_controllers();
+    visorbearer_led_set_soft_off_mode(false);
+    atomic_set(&soft_off_running, 0);
+}
+
+static int visorbearer_run_soft_off(void) {
+    if (atomic_cas(&soft_off_running, 0, 1) == false) {
+        LOG_DBG("Soft-off already in progress, ignoring trigger");
+        return 0;
+    }
+
+    LOG_INF("Visorbearer soft-off: stopping LED thread");
+    visorbearer_led_set_soft_off_mode(true);
+
+    LOG_INF("Visorbearer soft-off: running LED animation");
+    visorbearer_led_show_soft_off_anim();
+
+    int ret = visorbearer_led_suspend_controllers();
+    if (ret < 0) {
+        LOG_ERR("Visorbearer soft-off: LED suspend failed (%d)", ret);
+        visorbearer_reset_soft_off_state();
+        return ret;
+    }
+
+    ret = zmk_pm_soft_off();
+    if (ret < 0) {
+        LOG_ERR("Visorbearer soft-off: PM soft-off failed (%d)", ret);
+        visorbearer_reset_soft_off_state();
+    }
+
+    return ret;
+}
 
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
@@ -36,28 +72,12 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
     const struct behavior_visorbearer_soft_off_config *config = dev->config;
 
     if (config->hold_time_ms == 0) {
-        LOG_DBG("No hold time set, triggering visorbearer soft off");
-
-        LOG_INF("Visorbearer soft-off: stopping LED thread");
-        visorbearer_led_set_soft_off_mode(true);
-        k_sleep(K_MSEC(50));
-
-        LOG_INF("Visorbearer soft-off: running LED animation");
-        visorbearer_led_show_soft_off_anim();
-
-        zmk_pm_soft_off();
+        visorbearer_run_soft_off();
     } else {
         uint32_t hold_time = k_uptime_get() - data->press_start;
 
         if (hold_time > config->hold_time_ms) {
-            LOG_INF("Visorbearer soft-off: stopping LED thread");
-            visorbearer_led_set_soft_off_mode(true);
-            k_sleep(K_MSEC(50));
-
-            LOG_INF("Visorbearer soft-off: running LED animation");
-            visorbearer_led_show_soft_off_anim();
-
-            zmk_pm_soft_off();
+            visorbearer_run_soft_off();
         } else {
             LOG_INF("Not triggering soft off: held for %d and hold time is %d", hold_time,
                     config->hold_time_ms);
