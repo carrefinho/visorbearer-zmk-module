@@ -4,7 +4,7 @@ This is the ZMK module for the [Visorbearer](https://github.com/carrefinho/visor
 
 > [!IMPORTANT]
 >
-> Recent updates have introduced breaking changes to naming conventions. If you're upgrading from an earlier version, you'll need to update your configuration:
+> This module has been upgraded to work with the Zephyr 4.1 version of ZMK. There are some naming changes and new features. If you're upgrading from an earlier version, you'll need to update your configuration:
 >
 > **Behavior Devicetree File:**
 > - At the top of your keymap: `#include <behaviors/led_bars.dtsi>` → `#include <behaviors/visorbearer_led.dtsi>`
@@ -13,36 +13,38 @@ This is the ZMK module for the [Visorbearer](https://github.com/carrefinho/visor
 > - **NEW**: `&vb_soft_off` (soft-off with LED animation)
 > - `&ind_bat` → `&vb_ind_bat` (show battery status)
 > - `&ind_con` → `&vb_ind_con` (show connection status)
-> - `&bt_sel_led` → `&vb_bt_sel` (BT select with indicator)
-> - `&bt_clr_led` → `&vb_bt_clr` (BT clear with indicator)
+> - `&bt_sel_led` → `&vb_bt_sel` (BT select with LED indication)
+> - `&bt_clr_led` → `&vb_bt_clr` (BT clear with LED indication)
 >
-> **Configuration Options:**
-> - `_BAR_` has been removed from all config option names
+> **Kconfig Options:**
+> - `_BAR_` has been removed from all Kconfig option names
 > - Example: `CONFIG_VISORBEARER_LED_BAR_FADE_STEP_SIZE` → `CONFIG_VISORBEARER_LED_FADE_STEP_SIZE`
+>
+> If you'd like to stick with ZMK v0.3, you can use the [zmk-v0.3 branch](https://github.com/carrefinho/visorbearer-zmk-module/tree/zmk-v0.3).
 
 ## Usage
 
 > [!IMPORTANT]
-> The following are specific to testing with ZMK on Zephyr 4.1. Note the change in ZMK remote and revision, and board name from `seeeduino_xiao_ble` to `xiao_ble`.
+> If you're upgrading from a previous ZMK version (v0.3 and earlier), `board` has changed from `seeeduino_xiao_ble` to `xiao_ble`.
 
 Add these lines to `config/west.yml` in your `zmk-config` repository:
 
 ```yaml
 manifest:
   remotes:
-    - name: petejohanson
-      url-base: https://github.com/petejohanson
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
     - name: carrefinho                            # <---
       url-base: https://github.com/carrefinho     # <---
   projects:
     - name: zmk
-      remote: petejohanson
-      revision: core/move-to-zephyr-4-1
+      remote: zmkfirmware
+      revision: main
       import: app/west.yml
     - name: zmk-keyboards-visorbearer             # <---
       repo-path: visorbearer-zmk-module           # <---
       remote: carrefinho                          # <---
-      revision: zmk-zephyr-4-1                    # <---
+      revision: main                              # <---
   self:
     path: config
 ```
@@ -81,6 +83,8 @@ Visorbearer features two RGB LED bars with four segments each:
 
 ## LED Indication Behaviors
 
+Add `#include <behaviors/visorbearer_led.dtsi>` to the top of your keymap file to use the following behaviors and macros.
+
 Two behaviors are available to trigger LED indications on demand:
 
 ```dts
@@ -90,7 +94,7 @@ Two behaviors are available to trigger LED indications on demand:
 
 ### Bluetooth Behavior Wrapper Macros
 
-Use these macros to also trigger LED indications when selecting/clearing BT profiles:
+Use these macros to trigger LED indications when selecting/clearing BT profiles:
 
 ```dts
 &vb_bt_sel 0   // Select BT profile 0 and show connection status
