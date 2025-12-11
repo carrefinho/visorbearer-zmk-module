@@ -2,6 +2,9 @@
 
 This is the ZMK module for the [Visorbearer](https://github.com/carrefinho/visorbearer) keyboard, a 32-key unibody split wireless keyboard featuring 8 RGB LED indicators.
 
+> [!IMPORTANT]
+> This is a legacy branch for ZMK v0.3 (pre Zephyr 4.1 update). Note that this branch is missing some Visorbearer features and you may experience abnormal battery drain when using soft off due to a bug in that ZMK version. Consider upgrading to the [main branch](https://github.com/carrefinho/visorbearer-zmk-module).
+
 ## Usage
 
 Add these lines to `config/west.yml` in your `zmk-config` repository:
@@ -16,12 +19,12 @@ manifest:
   projects:
     - name: zmk
       remote: zmkfirmware
-      revision: main
+      revision: v0.3                              # <- use v0.3 release
       import: app/west.yml
     - name: zmk-keyboards-visorbearer             # <---
       repo-path: visorbearer-zmk-module           # <---
       remote: carrefinho                          # <---
-      revision: main                              # <---
+      revision: v0.3                              # <- use v0.3 tag
   self:
     path: config
 ```
