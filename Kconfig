@@ -113,4 +113,10 @@ config VISORBEARER_LED_BATTERY_GRANULAR
       For the last lit segment: 0-32% = off, 33-66% = 45% brightness, 67-100% = 70% brightness.
       When disabled, uses simple 25% segments at full brightness.
 
+config VISORBEARER_SOFT_OFF
+    bool
+    default y
+    depends on DT_HAS_ZMK_BEHAVIOR_VISORBEARER_SOFT_OFF_ENABLED
+    select ZMK_PM_SOFT_OFF
+
 endif # VISORBEARER_LED
