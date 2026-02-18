@@ -114,7 +114,6 @@ static const uint8_t colors[][3] = {
 #define CONFIG_VISORBEARER_LED_MODIFIER_ORDER MODIFIER_ORDER_DEFAULT
 #endif
 
-// Validate Kconfig string length
 BUILD_ASSERT(sizeof(CONFIG_VISORBEARER_LED_MODIFIER_ORDER) - 1 == NUM_SEGMENTS,
              "Modifier order configuration must be exactly 4 characters");
 
@@ -197,7 +196,6 @@ struct battery_segment_config {
     enum animation_type animation;
 };
 
-// Global state
 static struct led_bar conn_bar;
 static struct led_bar batt_bar;
 static const struct device *led_conn_dev;
@@ -210,7 +208,6 @@ static const struct device *const led_devices[] = {
 };
 #endif
 
-// Soft-off protection flag
 static atomic_t soft_off_in_progress = ATOMIC_INIT(0);
 
 static struct {
@@ -242,7 +239,11 @@ static void reset_soft_off_ack(void) {
     sem_clear(&soft_off_ack_sem);
 }
 
+static bool bars_animating(void);
+
 #if IS_ENABLED(CONFIG_PM_DEVICE)
+static bool drivers_suspended = false;
+
 static int suspend_led_device(const struct device *dev) {
     int ret = pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
 
@@ -261,9 +262,38 @@ static int suspend_led_device(const struct device *dev) {
 static void resume_led_device(const struct device *dev) {
     int ret = pm_device_action_run(dev, PM_DEVICE_ACTION_RESUME);
     if (ret < 0 && ret != -ENOSYS && ret != -ENOTSUP && ret != -EALREADY) {
-        LOG_WRN("Soft-off: resume of %s returned %d", dev->name, ret);
+        LOG_WRN("PM: resume of %s returned %d", dev->name, ret);
     }
 }
+
+static bool all_leds_off(void) {
+    for (int i = 0; i < NUM_SEGMENTS; i++) {
+        if (conn_bar.segments[i].brightness != 0 ||
+            batt_bar.segments[i].brightness != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void suspend_drivers_if_idle(void) {
+    if (!drivers_suspended && all_leds_off() && !bars_animating()) {
+        visorbearer_led_suspend_controllers();
+        drivers_suspended = true;
+        LOG_DBG("LED drivers suspended for power saving");
+    }
+}
+
+static void resume_drivers_if_needed(void) {
+    if (drivers_suspended) {
+        visorbearer_led_resume_controllers();
+        drivers_suspended = false;
+        LOG_DBG("LED drivers resumed");
+    }
+}
+#else
+static inline void suspend_drivers_if_idle(void) {}
+static inline void resume_drivers_if_needed(void) {}
 #endif
 
 static void segment_set(struct led_segment *seg, enum color_index color,
@@ -510,8 +540,21 @@ static void update_charging_state(void) {
     }
 }
 
+static bool bars_active(void) {
+#ifdef CONFIG_VISORBEARER_LED_SHOW_MODIFIERS
+    if (any_modifier_active()) {
+        return true;
+    }
+#endif
+    return conn_bar.expire_time > 0 || batt_bar.expire_time > 0 || bars_animating();
+}
+
 static void update_bars(void) {
     int64_t current_time = k_uptime_get();
+
+    if (bars_active()) {
+        resume_drivers_if_needed();
+    }
 
     if (batt_bar.expire_time > 0 && system_state.charging) {
         update_charging_state();
@@ -708,6 +751,7 @@ static void led_thread(void *arg1, void *arg2, void *arg3) {
         if (bars_animating()) {
             k_sleep(K_MSEC(10));
         } else {
+            suspend_drivers_if_idle();
             k_sem_take(&led_wake_sem, K_MSEC(100));
         }
     }
@@ -847,6 +891,7 @@ void visorbearer_led_resume_controllers(void) {
 }
 
 void visorbearer_led_show_soft_off_anim(void) {
+    resume_drivers_if_needed();
     for (uint32_t led_idx = 0; led_idx < NUM_SEGMENTS; led_idx++) {
         segment_set(&conn_bar.segments[led_idx], COLOR_SOFTOFF_WHITE, MAX_BRIGHTNESS,
                    ANIM_NONE, 0);
