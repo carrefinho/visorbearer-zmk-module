@@ -222,7 +222,7 @@
         adj {
             display-name = "Adj";
             bindings = <
-            &bt_sel_led 0   &bt_sel_led 1   &bt_sel_led 2   &bt_sel_led 3   &bt_clr_led                                     &ind_con        &ind_bat        &trans          &kp C_BRI_DN    &kp C_BRI_UP
+            &vb_bt_sel 0    &vb_bt_sel 1    &vb_bt_sel 2    &vb_bt_sel 3    &vb_bt_clr                                      &vb_ind_con     &vb_ind_bat     &trans          &kp C_BRI_DN    &kp C_BRI_UP
             &trans          &trans          &trans          &trans          &trans                                          &trans          &trans          &trans          &kp C_VOL_DN    &kp C_VOL_UP
             &bootloader     &trans          &trans          &trans                                                                          &trans          &trans          &trans          &bootloader
                                                                             &trans          &trans          &trans          &trans
