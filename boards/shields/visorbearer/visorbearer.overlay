@@ -43,7 +43,7 @@
 
    lp5012a:lp5012a@14 {
       status = "okay";
-      compatible = "ti,lp5012";
+      compatible = "zmk,ti-lp5012";
       reg = <0x14>;
       enable-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
       // log_scale_en;
@@ -84,7 +84,7 @@
 
    lp5012b:lp5012b@15 {
       status = "okay";
-      compatible = "ti,lp5012";
+      compatible = "zmk,ti-lp5012";
       reg = <0x15>;
       enable-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
       // log_scale_en;

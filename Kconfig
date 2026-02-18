@@ -1,7 +1,9 @@
+rsource "drivers/Kconfig"
+
 config VISORBEARER_LED
     bool "Enable LED bar status indicators for Visorbearer keyboard"
     select LED
-    select LP50XX
+    select ZMK_LP5012
 
 if VISORBEARER_LED
 

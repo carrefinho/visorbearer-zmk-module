@@ -1,0 +1,6 @@
+config ZMK_LP5012
+	bool "LP5012 LED controller with HW enable PM"
+	default y
+	depends on DT_HAS_ZMK_TI_LP5012_ENABLED
+	select I2C
+	select PM_DEVICE

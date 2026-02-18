@@ -1,0 +1,391 @@
+/*
+ * Copyright (c) 2020 Seagate Technology LLC
+ * Copyright (c) 2022 Grinn
+ * Copyright (c) 2026 carrefinho
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <errno.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/drivers/led/lp50xx.h>
+#include <zephyr/kernel.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/sys/util.h>
+
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(visorbearer_lp5012, CONFIG_LED_LOG_LEVEL);
+
+#define DT_DRV_COMPAT zmk_ti_lp5012
+
+#define LP5012_MAX_BRIGHTNESS		100U
+#define LP5012_NUM_MODULES		4
+#define LP5012_MAX_LEDS			4
+
+#define LP5012_MAX_CHANNELS		((LP50XX_COLORS_PER_LED + 1) * (LP5012_NUM_MODULES + 1))
+
+#define LP5012_DISABLE_DELAY_US		3
+#define LP5012_ENABLE_DELAY_US		500
+
+#define LP5012_DEVICE_CONFIG0		0x00
+#define LP5012_DEVICE_CONFIG1		0x01
+#define LP5012_LED_CONFIG0		0x02
+
+#define LP5012_BANK_BASE		0x03
+#define LP5012_LED0_BRIGHTNESS		0x07
+#define LP5012_OUT0_COLOR		0x0B
+#define LP5012_RESET			0x17
+
+#define CONFIG0_CHIP_EN			BIT(6)
+
+#define CONFIG1_LED_GLOBAL_OFF		BIT(0)
+#define CONFIG1_MAX_CURRENT_OPT		BIT(1)
+#define CONFIG1_PWM_DITHERING_EN	BIT(2)
+#define CONFIG1_AUTO_INCR_EN		BIT(3)
+#define CONFIG1_POWER_SAVE_EN		BIT(4)
+#define CONFIG1_LOG_SCALE_EN		BIT(5)
+
+#define RESET_SW			0xFF
+
+struct lp5012_config {
+	struct i2c_dt_spec bus;
+	const struct gpio_dt_spec gpio_enable;
+	uint8_t num_leds;
+	bool log_scale_en;
+	bool max_curr_opt;
+	const struct led_info *leds_info;
+};
+
+struct lp5012_data {
+	uint8_t chan_buf[LP5012_MAX_CHANNELS + 1];
+};
+
+static const struct led_info *lp5012_led_to_info(
+			const struct lp5012_config *config, uint32_t led)
+{
+	if (led < config->num_leds) {
+		return &config->leds_info[led];
+	}
+
+	return NULL;
+}
+
+static int lp5012_get_info(const struct device *dev, uint32_t led,
+			   const struct led_info **info)
+{
+	const struct lp5012_config *config = dev->config;
+	const struct led_info *led_info = lp5012_led_to_info(config, led);
+
+	if (!led_info) {
+		return -EINVAL;
+	}
+
+	*info = led_info;
+
+	return 0;
+}
+
+static int lp5012_set_brightness(const struct device *dev,
+				 uint32_t led, uint8_t value)
+{
+	const struct lp5012_config *config = dev->config;
+	const struct led_info *led_info = lp5012_led_to_info(config, led);
+	uint8_t buf[2];
+
+	if (!led_info) {
+		return -ENODEV;
+	}
+
+	if (value > LP5012_MAX_BRIGHTNESS) {
+		LOG_ERR("%s: brightness value out of bounds: val=%d, max=%d",
+			dev->name, value, LP5012_MAX_BRIGHTNESS);
+		return -EINVAL;
+	}
+
+	buf[0] = LP5012_LED0_BRIGHTNESS + led_info->index;
+	buf[1] = (value * 0xff) / 100;
+
+	return i2c_write_dt(&config->bus, buf, sizeof(buf));
+}
+
+static int lp5012_on(const struct device *dev, uint32_t led)
+{
+	return lp5012_set_brightness(dev, led, 100);
+}
+
+static int lp5012_off(const struct device *dev, uint32_t led)
+{
+	return lp5012_set_brightness(dev, led, 0);
+}
+
+static int lp5012_set_color(const struct device *dev, uint32_t led,
+			    uint8_t num_colors, const uint8_t *color)
+{
+	const struct lp5012_config *config = dev->config;
+	const struct led_info *led_info = lp5012_led_to_info(config, led);
+	uint8_t buf[LP50XX_COLORS_PER_LED + 1];
+	uint8_t i;
+
+	if (!led_info) {
+		return -ENODEV;
+	}
+
+	if (num_colors != led_info->num_colors) {
+		LOG_ERR("%s: invalid number of colors: got=%d, expected=%d",
+			dev->name,
+			num_colors,
+			led_info->num_colors);
+		return -EINVAL;
+	}
+
+	buf[0] = LP5012_OUT0_COLOR + LP50XX_COLORS_PER_LED * led_info->index;
+
+	for (i = 0; i < led_info->num_colors; i++) {
+		buf[1 + i] = color[i];
+	}
+
+	return i2c_write_dt(&config->bus, buf, led_info->num_colors + 1);
+}
+
+static int lp5012_write_channels(const struct device *dev,
+				 uint32_t start_channel,
+				 uint32_t num_channels, const uint8_t *buf)
+{
+	const struct lp5012_config *config = dev->config;
+	struct lp5012_data *data = dev->data;
+	uint8_t end_channel;
+
+	end_channel = LP5012_BANK_BASE + start_channel + num_channels;
+
+	if (end_channel > LP5012_BANK_BASE + LP5012_MAX_CHANNELS) {
+		return -EINVAL;
+	}
+
+	/*
+	 * Unfortunately this controller doesn't support commands split into
+	 * two I2C messages.
+	 */
+	data->chan_buf[0] = LP5012_BANK_BASE + start_channel;
+	memcpy(data->chan_buf + 1, buf, num_channels);
+
+	return i2c_write_dt(&config->bus, data->chan_buf, num_channels + 1);
+}
+
+static int lp5012_reset(const struct device *dev)
+{
+	const struct lp5012_config *config = dev->config;
+	uint8_t buf[2];
+	int err;
+
+	/* Software reset */
+	buf[0] = LP5012_RESET;
+	buf[1] = RESET_SW;
+	err = i2c_write_dt(&config->bus, buf, 2);
+	if (err < 0) {
+		return err;
+	}
+
+	/* After reset, apply configuration since all registers are reset. */
+	buf[0] = LP5012_DEVICE_CONFIG1;
+	buf[1] = CONFIG1_PWM_DITHERING_EN | CONFIG1_AUTO_INCR_EN
+		| CONFIG1_POWER_SAVE_EN;
+	if (config->max_curr_opt) {
+		buf[1] |= CONFIG1_MAX_CURRENT_OPT;
+	}
+	if (config->log_scale_en) {
+		buf[1] |= CONFIG1_LOG_SCALE_EN;
+	}
+
+	return i2c_write_dt(&config->bus, buf, 2);
+}
+
+static int lp5012_hw_enable(const struct device *dev, bool enable)
+{
+	const struct lp5012_config *config = dev->config;
+	int err;
+
+	if (config->gpio_enable.port == NULL) {
+		/* Nothing to do */
+		return 0;
+	}
+
+	err = gpio_pin_set_dt(&config->gpio_enable, enable);
+	if (err < 0) {
+		LOG_ERR("%s: failed to set enable gpio", dev->name);
+		return err;
+	}
+
+	k_usleep(enable ? LP5012_ENABLE_DELAY_US : LP5012_DISABLE_DELAY_US);
+
+	return 0;
+}
+
+static int lp5012_sw_enable(const struct device *dev, bool enable)
+{
+	const struct lp5012_config *config = dev->config;
+	uint8_t value = enable ? CONFIG0_CHIP_EN : 0;
+
+	return i2c_reg_update_byte_dt(&config->bus,
+				      LP5012_DEVICE_CONFIG0,
+				      CONFIG0_CHIP_EN,
+				      value);
+}
+
+static int lp5012_init(const struct device *dev)
+{
+	const struct lp5012_config *config = dev->config;
+	uint8_t led;
+	int err;
+
+	if (!i2c_is_ready_dt(&config->bus)) {
+		LOG_ERR("%s: I2C device not ready", dev->name);
+		return -ENODEV;
+	}
+
+	/* Check LED configuration found in DT */
+	if (config->num_leds > LP5012_MAX_LEDS) {
+		LOG_ERR("%s: invalid number of LEDs %d (max %d)",
+			dev->name,
+			config->num_leds,
+			LP5012_MAX_LEDS);
+		return -EINVAL;
+	}
+	for (led = 0; led < config->num_leds; led++) {
+		const struct led_info *led_info =
+			lp5012_led_to_info(config, led);
+
+		if (led_info->num_colors > LP50XX_COLORS_PER_LED) {
+			LOG_ERR("%s: LED %d: invalid number of colors (max %d)",
+				dev->name, led, LP50XX_COLORS_PER_LED);
+			return -EINVAL;
+		}
+	}
+
+	/* Configure GPIO if present */
+	if (config->gpio_enable.port != NULL) {
+		if (!gpio_is_ready_dt(&config->gpio_enable)) {
+			LOG_ERR("%s: enable gpio is not ready", dev->name);
+			return -ENODEV;
+		}
+
+		err = gpio_pin_configure_dt(&config->gpio_enable,
+					    GPIO_OUTPUT_INACTIVE);
+		if (err < 0) {
+			LOG_ERR("%s: failed to initialize enable gpio",
+				dev->name);
+			return err;
+		}
+	}
+
+	/* Enable hardware */
+	err = lp5012_hw_enable(dev, true);
+	if (err < 0) {
+		LOG_ERR("%s: failed to enable hardware", dev->name);
+		return err;
+	}
+
+	/* Reset device */
+	err = lp5012_reset(dev);
+	if (err < 0) {
+		LOG_ERR("%s: failed to reset", dev->name);
+		return err;
+	}
+
+	/* Enable device */
+	err = lp5012_sw_enable(dev, true);
+	if (err < 0) {
+		LOG_ERR("%s: failed to enable", dev->name);
+		return err;
+	}
+
+	return 0;
+}
+
+#ifdef CONFIG_PM_DEVICE
+static int lp5012_pm_action(const struct device *dev,
+			    enum pm_device_action action)
+{
+	int err;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		/* Disable via I2C first, then de-assert hardware enable */
+		err = lp5012_sw_enable(dev, false);
+		if (err < 0) {
+			return err;
+		}
+		return lp5012_hw_enable(dev, false);
+
+	case PM_DEVICE_ACTION_RESUME:
+		/* Assert hardware enable, reset device, then enable */
+		err = lp5012_hw_enable(dev, true);
+		if (err < 0) {
+			return err;
+		}
+		err = lp5012_reset(dev);
+		if (err < 0) {
+			return err;
+		}
+		return lp5012_sw_enable(dev, true);
+
+	default:
+		return -ENOTSUP;
+	}
+}
+#endif /* CONFIG_PM_DEVICE */
+
+static DEVICE_API(led, lp5012_led_api) = {
+	.on		= lp5012_on,
+	.off		= lp5012_off,
+	.get_info	= lp5012_get_info,
+	.set_brightness	= lp5012_set_brightness,
+	.set_color	= lp5012_set_color,
+	.write_channels	= lp5012_write_channels,
+};
+
+#define COLOR_MAPPING(led_node_id)						\
+	const uint8_t color_mapping_##led_node_id[] =				\
+		DT_PROP(led_node_id, color_mapping);
+
+#define LED_INFO(led_node_id)							\
+	{									\
+		.label		= DT_PROP(led_node_id, label),			\
+		.index		= DT_PROP(led_node_id, index),			\
+		.num_colors	=						\
+			DT_PROP_LEN(led_node_id, color_mapping),		\
+		.color_mapping	= color_mapping_##led_node_id,			\
+	},
+
+#define LP5012_DEVICE(n)							\
+	DT_INST_FOREACH_CHILD(n, COLOR_MAPPING)					\
+										\
+	static const struct led_info lp5012_leds_##n[] = {			\
+		DT_INST_FOREACH_CHILD(n, LED_INFO)				\
+	};									\
+										\
+	static const struct lp5012_config lp5012_config_##n = {			\
+		.bus		= I2C_DT_SPEC_INST_GET(n),			\
+		.gpio_enable	= GPIO_DT_SPEC_INST_GET_OR(n, enable_gpios, {0}),\
+		.num_leds	= ARRAY_SIZE(lp5012_leds_##n),			\
+		.log_scale_en	= DT_INST_PROP(n, log_scale_en),		\
+		.max_curr_opt	= DT_INST_PROP(n, max_curr_opt),		\
+		.leds_info	= lp5012_leds_##n,				\
+	};									\
+										\
+	static struct lp5012_data lp5012_data_##n;				\
+										\
+	PM_DEVICE_DT_INST_DEFINE(n, lp5012_pm_action);				\
+										\
+	DEVICE_DT_INST_DEFINE(n,						\
+			      lp5012_init,					\
+			      PM_DEVICE_DT_INST_GET(n),				\
+			      &lp5012_data_##n,					\
+			      &lp5012_config_##n,				\
+			      POST_KERNEL, CONFIG_LED_INIT_PRIORITY,		\
+			      &lp5012_led_api);
+
+DT_INST_FOREACH_STATUS_OKAY(LP5012_DEVICE)
