@@ -774,7 +774,7 @@ static int activity_state_changed_listener(const zmk_event_t *eh) {
         update_ble_state();
 
         // show status for disconnected profile (when endpoint is BLE) or critical battery
-        if (!system_state.connected && zmk_endpoints_selected().transport == ZMK_TRANSPORT_BLE) {
+        if (!system_state.connected && zmk_endpoint_get_preferred_transport() == ZMK_TRANSPORT_BLE) {
             show_connection_status();
         }
         if (system_state.battery_percentage < BATTERY_CRITICAL_THRESHOLD) {
