@@ -25,7 +25,7 @@ This is the ZMK module for the [Visorbearer](https://github.com/carrefinho/visor
 ## Usage
 
 > [!IMPORTANT]
-> If you're upgrading from a previous ZMK version (v0.3 and earlier), `board` has changed from `seeeduino_xiao_ble` to `xiao_ble`.
+> If you're upgrading from a previous ZMK version (v0.3 and earlier), `board` has changed from `seeeduino_xiao_ble` to `xiao_ble//zmk`.
 
 Add these lines to `config/west.yml` in your `zmk-config` repository:
 
@@ -54,10 +54,10 @@ Then add the `visorbearer` shield to your `build.yaml`:
 ```yaml
 ---
 include:
-  - board: xiao_ble
+  - board: xiao_ble//zmk
     shield: visorbearer
     snippet: studio-rpc-usb-uart
-  - board: xiao_ble
+  - board: xiao_ble//zmk
     shield: settings_reset
 ```
 
