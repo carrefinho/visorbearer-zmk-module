@@ -1,3 +1,9 @@
+#include <dt-bindings/zmk/bt.h>
+
+#ifndef MACRO_PLACEHOLDER
+#define MACRO_PLACEHOLDER 0
+#endif
+
 / {
     behaviors {
         /omit-if-no-ref/ vb_ind_bat: visorbearer_ind_bat {
